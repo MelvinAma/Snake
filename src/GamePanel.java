@@ -1,6 +1,7 @@
 import javafx.embed.swing.JFXPanel;
 import javafx.scene.media.Media;
 import javafx.scene.media.MediaPlayer;
+import org.apache.commons.lang3.ArrayUtils;
 
 import javax.swing.*;
 import java.awt.*;
@@ -14,14 +15,16 @@ import java.net.MalformedURLException;
 import java.util.Random;
 
 public class GamePanel extends JPanel implements ActionListener {
-    static final int SCREEN_WIDTH = 500;
-    static final int SCREEN_HEIGHT = 500;
-    static final int UNIT_SIZE = 25;
+    static final int SCREEN_WIDTH = 800;
+    static final int SCREEN_HEIGHT = 800;
+    static final int UNIT_SIZE = 50;
     static final int GAME_UNITS = (SCREEN_WIDTH * SCREEN_HEIGHT) / UNIT_SIZE;
     static final int DELAY = 100;
     final int[] x = new int[GAME_UNITS];
     final int[] y = new int[GAME_UNITS];
-    int bodyParts = 6;
+    int[] allCoordinates_X = new int[(GAME_UNITS / SCREEN_WIDTH) * (GAME_UNITS / SCREEN_WIDTH)];
+    int[] allCoordinates_Y = new int[(GAME_UNITS / SCREEN_HEIGHT) * (GAME_UNITS / SCREEN_HEIGHT)];
+    int bodyParts = 5;
     int applesEaten;
     int appleX;
     int appleY;
@@ -59,13 +62,11 @@ public class GamePanel extends JPanel implements ActionListener {
 
     public void draw(Graphics g) {
         if (running) {
-            /*
             // Grid:
             for (int i = 0; i < SCREEN_HEIGHT / UNIT_SIZE; i++) {
                 g.drawLine(i * UNIT_SIZE, 0, i * UNIT_SIZE, SCREEN_HEIGHT);
                 g.drawLine(0, i * UNIT_SIZE, SCREEN_WIDTH, i * UNIT_SIZE);
             }
-             */
             g.setColor(Color.red);
             g.fillOval(appleX, appleY, UNIT_SIZE, UNIT_SIZE);
 
@@ -91,22 +92,44 @@ public class GamePanel extends JPanel implements ActionListener {
     }
 
     public void newApple() {
-        while (appleInBody(x, appleX)) {
-            appleX = random.nextInt(SCREEN_WIDTH / UNIT_SIZE) * UNIT_SIZE;
-        }
-        while (appleInBody(y, appleY)) {
-            appleY = random.nextInt(SCREEN_HEIGHT / UNIT_SIZE) * UNIT_SIZE;
-        }
+
+        // Makes sure the apple is not placed inside the snake
+        int[] xy = findFreeCoordinates(); // xy[0] = x & xy[1] = y
+        appleX = xy[0];
+        appleY = xy[1];
     }
 
-    // Prevents an apple from being placed in the snake
-    private boolean appleInBody(int[] snakeCooridnate, int appleCooridnate) {
-        for (int j : snakeCooridnate) {
-            if ((j == appleCooridnate)) {
-                return true;
+    // Removes all squares occupied by the snake from an Array containing all coordinates
+    private int[] findFreeCoordinates() {
+        // allCoordinates_X[i] and allCoordinates_Y[i] are coordinates for the same square
+        // Loops through each row:
+        for (int i = 0; i < GAME_UNITS / SCREEN_WIDTH; i++) {
+            // One full row
+            for (int j = 0; j < GAME_UNITS / SCREEN_WIDTH; j++) {
+                allCoordinates_X[j + (GAME_UNITS / SCREEN_WIDTH) * i] = j * UNIT_SIZE;
+                allCoordinates_Y[j + (GAME_UNITS / SCREEN_WIDTH) * i] = i * UNIT_SIZE;
             }
         }
-        return false;
+        // Loops through all squares
+        for (int i = 0; i < allCoordinates_X.length; i++) {
+            // Loops through the bodyparts
+            for (int j = 0; j < bodyParts + 1; j++) {
+                // If square is occupied by the snake
+                if (allCoordinates_X[i] == x[j] && allCoordinates_Y[i] == y[j]) {
+                    // Removes the coordinates currently occupied by the snake
+                    allCoordinates_X[i] = -1;
+                    allCoordinates_Y[i] = -1;
+                    break;
+                }
+            }
+        }
+        // Generates a random index, and rerolls if the value at said index has been set to -1
+        int randomInt;
+        do {
+            randomInt = random.nextInt(allCoordinates_X.length);
+        } while (allCoordinates_X[randomInt] < 0 || allCoordinates_Y[randomInt] < 0);
+
+        return new int[]{allCoordinates_X[randomInt], allCoordinates_Y[randomInt]};
     }
 
     public void move() {
@@ -114,7 +137,6 @@ public class GamePanel extends JPanel implements ActionListener {
             x[i] = x[i - 1];
             y[i] = y[i - 1];
         }
-
         switch (direction) {
             case 'U':
                 y[0] = y[0] - UNIT_SIZE;
@@ -170,29 +192,9 @@ public class GamePanel extends JPanel implements ActionListener {
         if (y[0] >= SCREEN_HEIGHT) {
             running = false;
         }
-
         if (!running) {
             timer.stop();
         }
-    }
-
-    public void gameOver(Graphics g) {
-        // Score
-        g.setColor(Color.red);
-        g.setFont(new Font("Ink Free", Font.BOLD, 40));
-        FontMetrics metrics1 = getFontMetrics(g.getFont());
-        g.drawString(
-                "Score: " + applesEaten,
-                (SCREEN_WIDTH - metrics1.stringWidth("Score: " + applesEaten)) / 2,
-                SCREEN_HEIGHT / 2 + 50);
-        // Game over text
-        g.setColor(Color.red);
-        g.setFont(new Font("Ink Free", Font.BOLD, 75));
-        FontMetrics metrics2 = getFontMetrics(g.getFont());
-        g.drawString(
-                "Game Over",
-                (SCREEN_WIDTH - metrics2.stringWidth("Game Over")) / 2,
-                SCREEN_HEIGHT / 2);
     }
 
     @Override
@@ -202,7 +204,7 @@ public class GamePanel extends JPanel implements ActionListener {
             try {
                 checkApple();
             } catch (FileNotFoundException | MalformedURLException fileNotFoundException) {
-                fileNotFoundException.printStackTrace();
+                System.out.println("ERRORERRO");
             }
             checkCollisions();
         }
@@ -233,10 +235,38 @@ public class GamePanel extends JPanel implements ActionListener {
                         direction = 'R';
                     }
                     break;
-                case KeyEvent.VK_ENTER:
+                case KeyEvent.VK_ENTER: // Restarts the game
+                    for (int i = 0; i < bodyParts; i++) {
+                        x[i] = 0;
+                        y[i] = 0;
+                    }
+                    applesEaten = 0;
+                    bodyParts = 6;
+                    direction = 'R';
+                    timer.stop();
                     startGame();
+                    //new GameFrame().setVisible(true);
                     break;
             }
         }
+    }
+
+    public void gameOver(Graphics g) {
+        // Score
+        g.setColor(Color.red);
+        g.setFont(new Font("Ink Free", Font.BOLD, 40));
+        FontMetrics metrics1 = getFontMetrics(g.getFont());
+        g.drawString(
+                "Score: " + applesEaten,
+                (SCREEN_WIDTH - metrics1.stringWidth("Score: " + applesEaten)) / 2,
+                SCREEN_HEIGHT / 2 + 50);
+        // Game over text
+        g.setColor(Color.red);
+        g.setFont(new Font("Ink Free", Font.BOLD, 75));
+        FontMetrics metrics2 = getFontMetrics(g.getFont());
+        g.drawString(
+                "Game Over",
+                (SCREEN_WIDTH - metrics2.stringWidth("Game Over")) / 2,
+                SCREEN_HEIGHT / 2);
     }
 }
